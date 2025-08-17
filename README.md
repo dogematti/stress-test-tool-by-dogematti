@@ -11,6 +11,7 @@
 - **Detailed Reporting**: Generate comprehensive reports in console, CSV, or JSON formats.
 - **Enhanced Error Handling**: For HTTP tests, a breakdown of error status codes is provided in the report.
 - **Random User Agents**: Requests are sent with a rotating list of user agents to simulate diverse client traffic.
+- **Customizable ASCII Art**: The startup ASCII art can be customized by editing the `ascii_art.txt` file.
 - **Multiple Test Types**:
     - **HTTP**: Stress test web servers with configurable methods and payloads.
     - **TCP**: Test raw TCP connection handling.
