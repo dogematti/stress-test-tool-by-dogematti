@@ -134,6 +134,34 @@ async def async_tcp_test(target_host, target_port, num_connections, concurrency,
         await asyncio.gather(*tasks)
     return results
 
+async def async_udp_test(target_host, target_port, num_requests, concurrency, duration: int = None):
+    results = []
+    semaphore = asyncio.Semaphore(concurrency)
+    tasks = set()
+    start_time = time.time()
+
+    if duration:
+        while True:
+            elapsed_time = time.time() - start_time
+            if elapsed_time >= duration:
+                break
+            task = asyncio.create_task(send_udp_packet_with_semaphore(target_host, target_port, semaphore, results))
+            tasks.add(task)
+            tasks = {t for t in tasks if not t.done()}
+            await asyncio.sleep(0.001)
+    else:
+        for _ in range(num_requests):
+            task = asyncio.create_task(send_udp_packet_with_semaphore(target_host, target_port, semaphore, results))
+            tasks.add(task)
+
+    if tasks:
+        await asyncio.gather(*tasks)
+    return results
+
+async def send_udp_packet_with_semaphore(target_host, target_port, semaphore: asyncio.Semaphore, results: list):
+    async with semaphore:
+        await send_udp_packet(target_host, target_port, results)
+
 async def tcp_connection_with_semaphore(target_host, target_port, semaphore: asyncio.Semaphore, results: list):
     async with semaphore:
         await tcp_connection(target_host, target_port, results)
@@ -149,6 +177,18 @@ async def tcp_connection(target_host, target_port, results: list):
         results.append({"success": True, "time": time.time() - start_time})
     except Exception as e:
         logger.error(f"TCP connection to {target_host}:{target_port} failed: {e}")
+        results.append({"success": False, "error": str(e), "time": time.time() - start_time})
+
+async def send_udp_packet(target_host, target_port, results: list):
+    start_time = time.time()
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.sendto(b"hello", (target_host, target_port))
+        sock.close()
+        logger.info(f"Sent UDP packet to {target_host}:{target_port}")
+        results.append({"success": True, "time": time.time() - start_time})
+    except Exception as e:
+        logger.error(f"UDP packet to {target_host}:{target_port} failed: {e}")
         results.append({"success": False, "error": str(e), "time": time.time() - start_time})
 
 
@@ -207,7 +247,7 @@ def parse_custom_headers(headers_string):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Asynchronous Network Test Script")
-    parser.add_argument("--test_type", required=True, choices=["http", "tcp", "icmp", "syn"], help="Type of test to perform")
+    parser.add_argument("--test_type", required=True, choices=["http", "tcp", "icmp", "syn", "udp"], help="Type of test to perform")
     parser.add_argument("--target_host", required=True, help="Target URL (for HTTP) or IP address (for TCP, ICMP, SYN)")
     parser.add_argument("--target_port", type=int, help="Target port (for TCP, SYN, and optional for HTTP)")
     parser.add_argument("--num_requests", type=int, default=1, help="Number of requests or connections to send (ignored if --duration is set)")
@@ -309,6 +349,15 @@ async def main():
             return
         results = await async_tcp_test(args.target_host, args.target_port, args.num_requests, args.concurrency, args.duration)
         generate_and_print_report(results, "TCP", args.output_format, args.output_file)
+    elif args.test_type == "udp":
+        if not validate_ip(args.target_host):
+            logger.error("Invalid IP address format.")
+            return
+        if not args.target_port:
+            logger.error("Target port is required for UDP tests.")
+            return
+        results = await async_udp_test(args.target_host, args.target_port, args.num_requests, args.concurrency, args.duration)
+        generate_and_print_report(results, "UDP", args.output_format, args.output_file)
     elif args.test_type == "icmp":
         if not validate_ip(args.target_host):
             logger.error("Invalid IP address format.")
